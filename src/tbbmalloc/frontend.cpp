@@ -624,6 +624,7 @@ TLSData *TLSKey::createTLS(MemoryPool *memPool, Backend *backend)
 #endif
     setThreadMallocTLS(tls);
     memPool->extMemPool.allLocalCaches.registerThread(tls);
+    DLOG("tls created: %p\n", tls);
     return tls;
 }
 
@@ -1772,6 +1773,7 @@ FreeObject *Block::findObjectToFree(const void *object) const
 
 void TLSData::release()
 {
+    DLOG0("TLS Release\n");
     memPool->extMemPool.allLocalCaches.unregisterThread(this);
     externalCleanup(/*cleanOnlyUnused=*/false, /*cleanBins=*/false);
 

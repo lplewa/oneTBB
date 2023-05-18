@@ -31,6 +31,8 @@ class BackendSync {
     std::atomic<intptr_t> binsModifications;  // incremented on every bin modification
     Backend *backend;
 public:
+    std::atomic<int> lplewa_hack;
+    std::atomic<int> lplewa_hack2;
     void init(Backend *b) { backend = b; }
     void blockConsumed() { inFlyBlocks++; }
     void binsModified() { binsModifications++; }
@@ -236,7 +238,9 @@ private:
     MemRegionList    regionList;
 
     CoalRequestQ     coalescQ; // queue of coalescing requests
+public:
     BackendSync      bkndSync;
+private:
     // semaphore protecting adding more more memory from OS
     MemExtendingSema memExtendingSema;
     //size_t           totalMemSize,

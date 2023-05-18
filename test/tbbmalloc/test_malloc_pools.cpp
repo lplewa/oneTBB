@@ -344,10 +344,16 @@ public:
         pool(p), reqSize(sz), iters(it) {
         startB.initialize(threads);
     }
-    void operator()( int /*id*/ ) const {
+    void operator()( int /*id */) const {
         startB.wait();
         for (int i=0; i<iters; i++) {
             void *o = pool_malloc(pool, reqSize);
+//      if (!o) {
+//          utils::Sleep(10000);
+//          o = pool_malloc(pool, reqSize);
+//      }
+//            printf("==id %d pid: %d malloc =: %p==\n", id, gettid(), o);
+//            fflush(stdout);
             ASSERT(o, "Invalid object");
             pool_free(pool, o);
         }
@@ -403,18 +409,24 @@ void TestFixedBufferPool()
         FixedPoolHead<MAX_OBJECT + 1024*1024> head;
 
         pool_create_v1((intptr_t)&head, &pol, &pool);
+        printf("=========\n");
         {
 //          utils::NativeParallelFor( 1, FixedPoolUse(1, pool, MAX_OBJECT, 2) );
-	  for (int i = 0; i < 2; i++) {
-		  void *o = pool_malloc(pool, MAX_OBJECT);
-		  ASSERT(o, "Invalid object");
-		  pool_free(pool, o);
-	  }
+            for (int i = 0; i < 2; i++) {
+                void *o = pool_malloc(pool, MAX_OBJECT);
+                printf("malloc =: %p\n", o);
+                fflush(stdout);
+                ASSERT(o, "Invalid object");
+                pool_free(pool, o);
+
+            }
+            printf("=========\n");
         }
+
         // each thread asks for an MAX_OBJECT/p/2 object,
         // /2 is to cover fragmentation
         {
-          const int p = 2;
+          const int p = 128;
           utils::NativeParallelFor( p, FixedPoolUse(p, pool, MAX_OBJECT/p/2, 1) );
         }
 

@@ -742,4 +742,18 @@ void *getBackRef(BackRefIdx backRefIdx);
 } // namespace internal
 } // namespace rml
 
+#include <unistd.h>
+#include <sys/types.h>
+#define RETURN(X) do {auto __ret = X; if (__ret == nullptr){ fprintf(stdout, "%d ===\n", gettid()); fflush(stdout);} MALLOC_ASSERT(__ret != nullptr, "test"); return __ret; }while(false)
+#define RETURN1(X) do { if (X == nullptr) {fprintf(stdout, "%d ===\n", gettid()); fflush(stdout);} MALLOC_ASSERT(X != nullptr, "return NULL"); return(X);}while(false);
+//#define DLOG(...) do {fprintf(stdout, "pid: %d:", gettid()); fprintf(stdout, __VA_ARGS__); fflush(stdout);} while(false);
+
+#if (0)
+#define COLORS pid%3==0 ? "\033[34m" : pid%3==1 ? "\033[33m" : "\033[32m"
+#define DLOG(X, ...) do {int pid = gettid(); fprintf(stdout, "%s pid: %d:" X "\033[0m", COLORS, pid,  __VA_ARGS__); fflush(stdout);} while(false);
+#define DLOG0(X) do {int pid = gettid(); fprintf(stdout, "%s pid: %d:" X "\033[0m", COLORS, pid); fflush(stdout);} while(false);
+#else
+#define DLOG(X, ...) do { } while(false)
+#define DLOG0(X) do { } while(false)
+#endif
 #endif // __TBB_tbbmalloc_internal_H

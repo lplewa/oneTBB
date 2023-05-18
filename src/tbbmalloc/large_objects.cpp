@@ -506,15 +506,15 @@ template<typename Props> bool LargeObjectCacheImpl<Props>::
     CacheBin::releaseAllToBackend(ExtMemoryPool *extMemPool, BinBitMask *bitMask, int idx)
 {
     LargeMemoryBlock *toRelease = nullptr;
+    Backend *backend = &extMemPool->backend;
 
-    if (last.load(std::memory_order_relaxed)) {
+    if (last.load(std::memory_order_relaxed)) { //////////////////////Race start
         OpCleanAll data = {&toRelease};
         CacheBinOperation op(data);
         ExecuteOperation(&op, extMemPool, bitMask, idx);
     }
     bool released = toRelease;
 
-    Backend *backend = &extMemPool->backend;
     while ( toRelease ) {
         LargeMemoryBlock *helper = toRelease->next;
         MALLOC_ASSERT(!helper || lessThanWithOverflow(helper->age, toRelease->age),
@@ -522,6 +522,7 @@ template<typename Props> bool LargeObjectCacheImpl<Props>::
         backend->returnLargeObject(toRelease);
         toRelease = helper;
     }
+
     return released;
 }
 
@@ -1020,17 +1021,30 @@ void ExtMemoryPool::freeLargeObjectList(LargeMemoryBlock *head)
 
 bool ExtMemoryPool::softCachesCleanup()
 {
-    return loc.regularCleanup();
+    bool ret = false;
+    if (!this->backend.bkndSync.lplewa_hack2.fetch_or(0x1)) {
+        ret = loc.regularCleanup();
+        this->backend.bkndSync.lplewa_hack2 = 0;
+    }
+    return ret;
 }
 
 bool ExtMemoryPool::hardCachesCleanup()
 {
     // thread-local caches must be cleaned before LOC,
     // because object from thread-local cache can be released to LOC
-    bool ret = releaseAllLocalCaches();
-    ret |= orphanedBlocks.cleanup(&backend);
-    ret |= loc.cleanAll();
-    ret |= backend.clean();
+    bool x = releaseAllLocalCaches();
+    bool ret = x;
+    DLOG("hardCachesCleanup1: %d; %d\n", ret, x);
+    x = orphanedBlocks.cleanup(&backend);
+    ret |= x;
+    DLOG("hardCachesCleanup2: %d; %d\n", ret, x);
+    x = loc.cleanAll();
+    ret |= x;
+    DLOG("hardCachesCleanup3: %d; %d\n", ret, x);
+    x = backend.clean();
+    ret |= x;
+    DLOG("hardCachesCleanup4: %d; %d\n", ret, x);
     return ret;
 }
 
