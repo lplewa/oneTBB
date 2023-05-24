@@ -344,16 +344,10 @@ public:
         pool(p), reqSize(sz), iters(it) {
         startB.initialize(threads);
     }
-    void operator()( int /*id */) const {
+    void operator()( int /*id*/ ) const {
         startB.wait();
         for (int i=0; i<iters; i++) {
             void *o = pool_malloc(pool, reqSize);
-//      if (!o) {
-//          utils::Sleep(10000);
-//          o = pool_malloc(pool, reqSize);
-//      }
-//            printf("==id %d pid: %d malloc =: %p==\n", id, gettid(), o);
-//            fflush(stdout);
             ASSERT(o, "Invalid object");
             pool_free(pool, o);
         }
@@ -401,7 +395,9 @@ bool haveEnoughSpace(rml::MemoryPool *pool, size_t sz)
 
 void TestFixedBufferPool()
 {
+    const int ITERS = 7;
     const size_t MAX_OBJECT = 7*1024*1024;
+    void *ptrs[ITERS];
     rml::MemPoolPolicy pol(fixedBufGetMem, nullptr, 0, /*fixedSizePool=*/true,
                            /*keepMemTillDestroy=*/false);
     rml::MemoryPool *pool;
@@ -409,27 +405,70 @@ void TestFixedBufferPool()
         FixedPoolHead<MAX_OBJECT + 1024*1024> head;
 
         pool_create_v1((intptr_t)&head, &pol, &pool);
-        printf("=========\n");
         {
-//          utils::NativeParallelFor( 1, FixedPoolUse(1, pool, MAX_OBJECT, 2) );
-            for (int i = 0; i < 2; i++) {
-                void *o = pool_malloc(pool, MAX_OBJECT);
-                printf("malloc =: %p\n", o);
-                fflush(stdout);
-                ASSERT(o, "Invalid object");
-                pool_free(pool, o);
+            utils::NativeParallelFor( 1, FixedPoolUse(1, pool, MAX_OBJECT, 2) );
 
+            for (int i=0; i<ITERS; i++) {
+                ptrs[i] = pool_malloc(pool, MAX_OBJECT/ITERS);
+                REQUIRE(ptrs[i]);
             }
-            printf("=========\n");
-        }
+            for (int i=0; i<ITERS; i++)
+                pool_free(pool, ptrs[i]);
 
+            utils::NativeParallelFor( 1, FixedPoolUse(1, pool, MAX_OBJECT, 1) );
+        }
         // each thread asks for an MAX_OBJECT/p/2 object,
         // /2 is to cover fragmentation
-        {
-          const int p = 128;
-          utils::NativeParallelFor( p, FixedPoolUse(p, pool, MAX_OBJECT/p/2, 1) );
+        for (int p=utils::MinThread; p<=utils::MaxThread; p++) {
+            utils::NativeParallelFor( p, FixedPoolUse(p, pool, MAX_OBJECT/p/2, 10000) );
         }
+        {
+            const int p = 128;
+            utils::NativeParallelFor( p, FixedPoolUse(p, pool, MAX_OBJECT/p/2, 1) );
+        }
+        if(0){
+            size_t maxSz;
+            const int p = 256;
+            utils::SpinBarrier barrier(p);
 
+            // Find maximal useful object size. Start with MAX_OBJECT/2,
+            // as the pool might be fragmented by BootStrapBlocks consumed during
+            // FixedPoolRun.
+            size_t l, r;
+            REQUIRE(haveEnoughSpace(pool, MAX_OBJECT/2));
+            for (l = MAX_OBJECT/2, r = MAX_OBJECT + 1024*1024; l < r-1; ) {
+                size_t mid = (l+r)/2;
+                if (haveEnoughSpace(pool, mid))
+                    l = mid;
+                else
+                    r = mid;
+            }
+            maxSz = l;
+            REQUIRE_MESSAGE(!haveEnoughSpace(pool, maxSz+1), "Expect to find boundary value.");
+            // consume all available memory
+            void *largeObj = pool_malloc(pool, maxSz);
+            REQUIRE(largeObj);
+            void *o = pool_malloc(pool, 64);
+            if (o) // pool fragmented, skip FixedPoolNomem
+                pool_free(pool, o);
+            else
+                utils::NativeParallelFor( p, FixedPoolNomem(&barrier, pool) );
+            pool_free(pool, largeObj);
+            // keep some space unoccupied
+            largeObj = pool_malloc(pool, maxSz-512*1024);
+            REQUIRE(largeObj);
+            utils::NativeParallelFor( p, FixedPoolSomeMem(&barrier, pool) );
+            pool_free(pool, largeObj);
+        }
+        bool ok = pool_destroy(pool);
+        REQUIRE(ok);
+    }
+    // check that fresh untouched pool can successfully fulfil requests from 128 threads
+    {
+        FixedPoolHead<MAX_OBJECT + 1024*1024> head;
+        pool_create_v1((intptr_t)&head, &pol, &pool);
+        int p=128;
+        utils::NativeParallelFor( p, FixedPoolUse(p, pool, MAX_OBJECT/p/2, 1) );
         bool ok = pool_destroy(pool);
         REQUIRE(ok);
     }
